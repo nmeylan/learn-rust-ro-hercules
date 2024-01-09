@@ -27,7 +27,7 @@ use crate::server::Server;
 
 
 use skill::ScriptSkillService;
-use crate::repository::ItemRepository;
+use crate::repository::{CharacterRepository, ItemRepository};
 use crate::server::request_handler::atcommand::handle_set_job;
 
 use crate::server::service::character::character_service::CharacterService;
@@ -276,6 +276,64 @@ impl NativeMethodHandler for PlayerScriptHandler {
                 self.session.char_id()
             };
             self.server.add_to_next_tick(CharacterUpdateLook(CharacterLook { look_type: LookType::from_value(look_type as usize), look_value: look_value as u16, char_id }));
+        } else if native.name.eq("basicskillcheck") {
+            // TODO: rAthena brings from a config file the flag `basic_skill_check`
+            // and since I didn't found the config file I'm assuming that it will be implemented yet.
+            let skill_check_flag = value::Value::new_number(1);
+            execution_thread.push_constant_on_stack(skill_check_flag);
+        } else if native.name.eq("getcharid") {
+            let info_type = params[0].number_value().unwrap() as usize;
+            let char = self.server.state().get_character_unsafe(self.session.char_id());
+
+            let char_info = match info_type {
+                0 => value::Value::new_number(char.char_id.clone() as i32),
+                1 => value::Value::new_number(1), // TODO: party id
+                2 => value::Value::new_number(2), // TODO: guild id
+                3 => value::Value::new_number(3), // TODO: account id
+                4 => value::Value::new_number(4), // TODO: bg_id
+                5 => value::Value::new_number(5), // TODO: clan_id
+                _ => panic!("Unknown char info type {info_type}")
+            };
+
+            execution_thread.push_constant_on_stack(char_info);
+        } else if native.name.eq("savepoint") {
+            println!("savepoint: {:?}", params);
+            let map_name = params[0].string_value().unwrap();
+            let save_x = params[1].number_value().unwrap();
+            let save_y = params[2].number_value().unwrap();
+
+            self.runtime.block_on(async {
+                let char = self.server.state().get_character_unsafe(self.session.char_id());
+                self.server.repository.character_save_respawn_point(
+                    char.account_id,
+                    char.char_id,
+                    map_name.clone(),
+                    save_x as u16,
+                    save_y as u16,
+                ).await.unwrap();
+            });
+
+        } else if native.name.eq("getguildinfo") {
+            let info_type = params[0].number_value().unwrap() as usize;
+
+            // TODO: Validate if player has a guild.
+
+            let char_info = match info_type {
+                0 => value::Value::new_string("TODO Rustaceans Guild Name".to_string()), // TODO: guild name
+                1 => value::Value::new_number(1), // TODO: guild id
+                2 => value::Value::new_number(2), // TODO: guild level
+                3 => value::Value::new_number(3), // TODO: guild online
+                4 => value::Value::new_number(4), // TODO: guild average level
+                5 => value::Value::new_number(5), // TODO: guild max members
+                6 => value::Value::new_number(6), // TODO: guild exp
+                7 => value::Value::new_number(7), // TODO: guild next exp
+                8 => value::Value::new_number(8), // TODO: guild skill points
+                9 => value::Value::new_string("TODO GUILD MASTER NAME".to_string()), // TODO: guild master char name
+                10 => value::Value::new_number(10), // TODO: guild master char id
+                _ => panic!("Unknown guild info type {info_type}")
+            };
+
+            execution_thread.push_constant_on_stack(char_info);
         } else if native.name.eq("strcharinfo") {
             let info_type = params[0].number_value().unwrap() as usize;
             let char = if params.len() == 2 {
@@ -289,7 +347,7 @@ impl NativeMethodHandler for PlayerScriptHandler {
                 1 => value::Value::new_string("TODO PARTY NAME".to_string()),
                 2 => value::Value::new_string("TODO GUILD NAME".to_string()),
                 3 => value::Value::new_string(char.current_map_name().clone()),
-                _ => value::Value::new_string(format!("Unknown char info type {info_type}"))
+                _ => panic!("setlook with char_id not yet supported")
             };
             execution_thread.push_constant_on_stack(char_info);
         } else if native.name.eq("message") {
@@ -303,9 +361,9 @@ impl NativeMethodHandler for PlayerScriptHandler {
         } else if native.name.eq("dispbottom") {
             let message = params[0].string_value().unwrap();
             let green = "0x00FF00".to_string();
-            let color =  if params.len() > 1 {
+            let color = if params.len() > 1 {
                 params[1].string_value().unwrap_or(&green).clone()
-            }else {
+            } else {
                 green
             };
             let color_rgb = if color.starts_with("0x") {
